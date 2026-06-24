@@ -1,7 +1,9 @@
 ---
 name: github-rest
 description: |
-  Use ONLY when the user mentions GitHub, GH, pull request(s), PR(s), issue(s),
+  CRITICAL: If the user prompt contains ANY github.com URL, you MUST load this skill FIRST.
+  Do NOT use Tavily, fetch, or any web-search MCP servers to read GitHub links.
+  Use when the user mentions GitHub, GH, pull request(s), PR(s), issue(s),
   GitHub API, REST API, review, comment, merge, or a GitHub repo (owner/repo).
   Load when the user wants to create/view/update/merge PRs, list/create comments,
   manage issues, review code, or interact with any GitHub REST endpoint.
