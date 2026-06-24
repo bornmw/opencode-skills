@@ -1,0 +1,465 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+GITHUB_API="${GITHUB_API:-https://api.github.com}"
+
+if [ -z "$GITHUB_TOKEN" ]; then
+  echo "Error: GITHUB_TOKEN is not set." >&2
+  echo "" >&2
+  echo "  export GITHUB_TOKEN=\"github_pat_...\"" >&2
+  echo "" >&2
+  echo "Generate a token at: https://github.com/settings/tokens" >&2
+  exit 1
+fi
+
+TMPDIR=""
+cleanup() { [ -n "$TMPDIR" ] && rm -rf "$TMPDIR"; }
+trap cleanup EXIT
+
+TMPDIR=$(mktemp -d /tmp/gh-api-XXXXXX)
+
+usage() {
+  cat >&2 <<'USAGE'
+Usage: github-rest <command> [args...]
+
+Raw API:
+  get <endpoint>                              GET request
+  post <endpoint> <json>                      POST request
+  patch <endpoint> <json>                     PATCH request
+  delete <endpoint>                           DELETE request
+
+Pull requests:
+  pr list [owner/repo]
+  pr view [owner/repo] <number>
+  pr create [owner/repo] --title <t> --head <b> --base <b> [--body <b>] [--draft]
+  pr update [owner/repo] <number> [--title <t>] [--body <b>] [--state open|closed]
+  pr merge [owner/repo] <number> [--method merge|squash|rebase]
+  pr close [owner/repo] <number>
+  pr comment [owner/repo] <number> <body>
+  pr review [owner/repo] <number> --body <t> [--event APPROVE|REQUEST_CHANGES|COMMENT]
+  pr reviews [owner/repo] <number>
+  pr files [owner/repo] <number>
+  pr commits [owner/repo] <number>
+
+Issues:
+  issue list [owner/repo]
+  issue view [owner/repo] <number>
+  issue create [owner/repo] --title <t> [--body <b>]
+  issue update [owner/repo] <number> [--title <t>] [--body <b>] [--state open|closed]
+  issue close [owner/repo] <number>
+  issue comment [owner/repo] <number> <body>
+
+Comments:
+  comment list [owner/repo] <number>
+  comment create [owner/repo] <number> --body <t>
+
+  help                                        Show this message
+USAGE
+  exit 1
+}
+
+# --- Utilities ---
+
+detect_repo() {
+  local repo="${1:-}"
+  if [ -n "$repo" ] && [[ "$repo" != -* ]]; then
+    echo "$repo"
+    return 0
+  fi
+  local detected
+  detected=$(git remote -v 2>/dev/null | awk '/github.com/{print $2; exit}' | sed 's|.*github.com[:\/]||; s|\.git$||')
+  if [ -z "$detected" ]; then
+    echo "Error: No owner/repo provided and could not detect from git remote" >&2
+    exit 1
+  fi
+  echo "$detected"
+}
+
+flag_value() {
+  local flag="$1"
+  shift
+  while [ $# -gt 0 ]; do
+    if [ "$1" = "$flag" ] && [ $# -gt 1 ]; then
+      echo "$2"
+      return 0
+    fi
+    shift
+  done
+  return 1
+}
+
+has_flag() {
+  local flag="$1"
+  shift
+  for arg in "$@"; do
+    [ "$arg" = "$flag" ] && return 0
+  done
+  return 1
+}
+
+json_build() {
+  local json="{}"
+  while [ $# -gt 0 ]; do
+    local key="$1"
+    local val="$2"
+    shift 2
+    json=$(echo "$json" | jq --arg v "$val" ". + {${key}: \$v}")
+  done
+  echo "$json"
+}
+
+# --- API call ---
+
+api_call() {
+  local method="$1"
+  local endpoint="$2"
+  local data="${3:-}"
+
+  local url="${GITHUB_API}${endpoint}"
+  local resp="${TMPDIR}/response"
+  local code_file="${TMPDIR}/code"
+
+  local args=(-sS)
+  args+=(-H "Accept: application/vnd.github+json")
+  args+=(-H "Authorization: Bearer ${GITHUB_TOKEN}")
+  args+=(-H "X-GitHub-Api-Version: 2022-11-28")
+
+  if [ -n "$data" ]; then
+    args+=(-H "Content-Type: application/json")
+    args+=(-d "$data")
+  fi
+
+  curl "${args[@]}" -o "$resp" -w "%{http_code}" -X "$method" "$url" > "$code_file"
+  local code
+  code=$(cat "$code_file")
+
+  if [ "$code" -ge 400 ]; then
+    echo "Error: HTTP $code" >&2
+    if [ -s "$resp" ]; then
+      jq -r '.message // .' "$resp" 2>/dev/null || cat "$resp"
+      jq -r '.errors[]? | "  - \(.message // .)"' "$resp" 2>/dev/null || true
+    fi
+    return 1
+  fi
+
+  if [ ! -s "$resp" ]; then
+    return 0
+  fi
+
+  if command -v jq &>/dev/null; then
+    jq -C '.' "$resp" 2>/dev/null || cat "$resp"
+  else
+    cat "$resp"
+  fi
+}
+
+# --- Command handlers ---
+
+cmd_get() {
+  [ $# -ge 1 ] || usage
+  api_call "GET" "$1" ""
+}
+
+cmd_post() {
+  [ $# -ge 2 ] || usage
+  api_call "POST" "$1" "$2"
+}
+
+cmd_patch() {
+  [ $# -ge 2 ] || usage
+  api_call "PATCH" "$1" "$2"
+}
+
+cmd_delete() {
+  [ $# -ge 1 ] || usage
+  api_call "DELETE" "$1" ""
+}
+
+# --- PR subcommands ---
+
+cmd_pr() {
+  [ $# -ge 1 ] || usage
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    list)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      api_call "GET" "/repos/${repo}/pulls?state=open&per_page=50" ""
+      ;;
+    view)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/pulls/${number}" ""
+      ;;
+    create)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local title head base body
+      title=$(flag_value "--title" "$@") ||:
+      head=$(flag_value "--head" "$@") ||:
+      base=$(flag_value "--base" "$@") ||:
+      body=$(flag_value "--body" "$@") ||:
+      local draft="false"
+      has_flag "--draft" "$@" && draft="true"
+
+      if [ -z "$title" ] || [ -z "$head" ] || [ -z "$base" ]; then
+        echo "Error: --title, --head, and --base are required" >&2
+        usage
+      fi
+
+      local json
+      json=$(jq -n \
+        --arg title "$title" \
+        --arg head "$head" \
+        --arg base "$base" \
+        --arg body "$body" \
+        --argjson draft "$draft" \
+        '{title: $title, head: $head, base: $base, body: $body, draft: $draft}')
+      api_call "POST" "/repos/${repo}/pulls" "$json"
+      ;;
+    update)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      local title body state
+      title=$(flag_value "--title" "$@") ||:
+      body=$(flag_value "--body" "$@") ||:
+      state=$(flag_value "--state" "$@") ||:
+
+      local json="{}"
+      [ -n "$title" ] && json=$(echo "$json" | jq --arg v "$title" '. + {title: $v}')
+      [ -n "$body" ] && json=$(echo "$json" | jq --arg v "$body" '. + {body: $v}')
+      [ -n "$state" ] && json=$(echo "$json" | jq --arg v "$state" '. + {state: $v}')
+
+      if [ "$json" = "{}" ]; then
+        echo "Error: Nothing to update. Provide --title, --body, or --state." >&2
+        exit 1
+      fi
+
+      api_call "PATCH" "/repos/${repo}/pulls/${number}" "$json"
+      ;;
+    merge)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      local method
+      method=$(flag_value "--method" "$@") || method="merge"
+      api_call "PUT" "/repos/${repo}/pulls/${number}/merge" "{\"merge_method\": \"$method\"}"
+      ;;
+    close)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "PATCH" "/repos/${repo}/pulls/${number}" '{"state": "closed"}'
+      ;;
+    comment)
+      local repo number body
+      repo=$(detect_repo "${1:-}")
+      shift
+      number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      body="$*"
+      [ -z "$body" ] && { echo "Error: Comment body is required" >&2; exit 1; }
+      api_call "POST" "/repos/${repo}/issues/${number}/comments" "$(jq -n --arg body "$body" '{body: $body}')"
+      ;;
+    reviews)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/pulls/${number}/reviews" ""
+      ;;
+    review)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      local body event
+      body=$(flag_value "--body" "$@") ||:
+      event=$(flag_value "--event" "$@") || event="COMMENT"
+      [ -z "$body" ] && { echo "Error: --body is required for review" >&2; exit 1; }
+      api_call "POST" "/repos/${repo}/pulls/${number}/reviews" "$(jq -n --arg body "$body" --arg event "$event" '{body: $body, event: $event}')"
+      ;;
+    files)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/pulls/${number}/files" ""
+      ;;
+    commits)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/pulls/${number}/commits" ""
+      ;;
+    *)
+      echo "Error: Unknown pr subcommand: $subcmd" >&2
+      usage
+      ;;
+  esac
+}
+
+# --- Issue subcommands ---
+
+cmd_issue() {
+  [ $# -ge 1 ] || usage
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    list)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      api_call "GET" "/repos/${repo}/issues?state=open&per_page=50" ""
+      ;;
+    view)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/issues/${number}" ""
+      ;;
+    create)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local title body
+      title=$(flag_value "--title" "$@") ||:
+      body=$(flag_value "--body" "$@") ||:
+      [ -z "$title" ] && { echo "Error: --title is required" >&2; usage; }
+      api_call "POST" "/repos/${repo}/issues" "$(jq -n --arg title "$title" --arg body "$body" '{title: $title, body: $body}')"
+      ;;
+    update)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      local title body state
+      title=$(flag_value "--title" "$@") ||:
+      body=$(flag_value "--body" "$@") ||:
+      state=$(flag_value "--state" "$@") ||:
+
+      local json="{}"
+      [ -n "$title" ] && json=$(echo "$json" | jq --arg v "$title" '. + {title: $v}')
+      [ -n "$body" ] && json=$(echo "$json" | jq --arg v "$body" '. + {body: $v}')
+      [ -n "$state" ] && json=$(echo "$json" | jq --arg v "$state" '. + {state: $v}')
+
+      if [ "$json" = "{}" ]; then
+        echo "Error: Nothing to update. Provide --title, --body, or --state." >&2
+        exit 1
+      fi
+
+      api_call "PATCH" "/repos/${repo}/issues/${number}" "$json"
+      ;;
+    close)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "PATCH" "/repos/${repo}/issues/${number}" '{"state": "closed"}'
+      ;;
+    comment)
+      local repo number body
+      repo=$(detect_repo "${1:-}")
+      shift
+      number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      body="$*"
+      [ -z "$body" ] && { echo "Error: Comment body is required" >&2; exit 1; }
+      api_call "POST" "/repos/${repo}/issues/${number}/comments" "$(jq -n --arg body "$body" '{body: $body}')"
+      ;;
+    *)
+      echo "Error: Unknown issue subcommand: $subcmd" >&2
+      usage
+      ;;
+  esac
+}
+
+# --- Comment subcommands ---
+
+cmd_comment() {
+  [ $# -ge 1 ] || usage
+  local subcmd="$1"
+  shift
+
+  case "$subcmd" in
+    list)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      api_call "GET" "/repos/${repo}/issues/${number}/comments" ""
+      ;;
+    create)
+      local repo
+      repo=$(detect_repo "${1:-}")
+      shift
+      local number="${1:-}"
+      [ -z "$number" ] && usage
+      shift
+      local body
+      body=$(flag_value "--body" "$@") ||:
+      [ -z "$body" ] && { echo "Error: --body is required" >&2; exit 1; }
+      api_call "POST" "/repos/${repo}/issues/${number}/comments" "$(jq -n --arg body "$body" '{body: $body}')"
+      ;;
+    *)
+      echo "Error: Unknown comment subcommand: $subcmd" >&2
+      usage
+      ;;
+  esac
+}
+
+# --- Main ---
+
+main() {
+  [ $# -eq 0 ] && usage
+
+  local cmd="$1"
+  shift
+
+  case "$cmd" in
+    get) cmd_get "$@" ;;
+    post) cmd_post "$@" ;;
+    patch) cmd_patch "$@" ;;
+    delete) cmd_delete "$@" ;;
+    pr) cmd_pr "$@" ;;
+    issue) cmd_issue "$@" ;;
+    comment) cmd_comment "$@" ;;
+    help|--help|-h) usage ;;
+    *)
+      echo "Error: Unknown command: $cmd" >&2
+      usage
+      ;;
+  esac
+}
+
+main "$@"
