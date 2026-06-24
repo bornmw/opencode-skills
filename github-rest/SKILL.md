@@ -10,75 +10,122 @@ description: |
 
 # GitHub REST API Skill
 
-This skill provides a `github-rest` CLI tool that wraps the GitHub REST API using `curl` and `jq`. It handles common workflows (PRs, issues, comments, reviews) and supports raw API access for everything else.
+Calls the GitHub REST API directly with `curl` and `jq`. No wrapper script.
 
-## Install
+## Token
+
+Read from `~/.config/github-rest/token`. Lines starting with `#` are comments. The first non-comment line is the token.
 
 ```bash
-# From this repository:
-bash github-rest/install.sh
+TOKEN=$(sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; p; q' ~/.config/github-rest/token)
 ```
 
-This copies `github-rest` to `~/.local/bin/` and the skill definition to `~/.config/opencode/skills/github-rest/`.
-
-## Prerequisites
-
-- `curl` and `jq` installed
-- A [GitHub personal access token](https://github.com/settings/tokens) with `repo` scope
-- Environment variable `GITHUB_TOKEN` set in your shell profile
-
-## Usage
-
-### Raw API access — any endpoint, any method
+## API call pattern
 
 ```bash
-github-rest get /repos/owner/repo/pulls
-github-rest post /repos/owner/repo/pulls '{"title":"My PR","head":"feature","base":"main"}'
-github-rest patch /repos/owner/repo/pulls/42 '{"title":"Updated"}'
-github-rest delete /repos/owner/repo/pulls/42
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/vnd.github+json" \
+  "https://api.github.com/{endpoint}" | jq '{filter}'
 ```
 
-### Pull requests
+For POST/PATCH/DELETE, add `-X METHOD` and `-d '{json}'` with `Content-Type: application/json`.
+
+## Helpers — extract owner/repo from git remote
+
+When the user omits `owner/repo`, detect it from `git remote -v`:
 
 ```bash
-github-rest pr list                              # list open PRs (auto-detects repo)
-github-rest pr view owner/repo 42                # view PR details
-github-rest pr create --title "Fix" --head feat --base main   # create PR (auto repo)
-github-rest pr merge owner/repo 42 --method squash
-github-rest pr comment owner/repo 42 "LGTM!"
-github-rest pr review owner/repo 42 --body "Looks good" --event APPROVE
-github-rest pr close owner/repo 42
-github-rest pr files owner/repo 42               # changed files
-github-rest pr commits owner/repo 42
+REPO=$(git remote -v 2>/dev/null | awk '/github.com/{print $2; exit}' | sed 's|.*github.com[:\/]||; s|\.git$||')
+```
+
+## Common operations
+
+### PRs
+
+```bash
+# List open PRs
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/pulls?state=open&per_page=10" \
+  | jq -r '.[] | "#\(.number) [\(.state)] \(.title) (@\(.user.login))"'
+
+# View PR
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+
+# Create PR
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"...","head":"branch","base":"main","body":"..."}' \
+  "https://api.github.com/repos/{owner}/{repo}/pulls"
+
+# Merge PR
+curl -sS -X PUT -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"merge_method":"squash"}' \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/merge"
+
+# Close PR
+curl -sS -X PATCH -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"state":"closed"}' \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}"
+
+# List PR comments
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/comments"
+
+# Create PR review
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"body":"...","event":"APPROVE|REQUEST_CHANGES|COMMENT"}' \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/reviews"
+
+# List changed files
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/pulls/{number}/files" \
+  | jq -r '.[] | "\(.filename) (\(.status), +\(.additions)/-\(.deletions))"'
 ```
 
 ### Issues
 
 ```bash
-github-rest issue list
-github-rest issue view owner/repo 42
-github-rest issue create --title "Bug" --body "Steps to reproduce..."
-github-rest issue comment owner/repo 42 "Fixed in #43"
-github-rest issue close owner/repo 42
+# List open issues
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page=10"
+
+# Create issue
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"title":"...","body":"..."}' \
+  "https://api.github.com/repos/{owner}/{repo}/issues"
+
+# Comment on issue/PR
+curl -sS -X POST -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"body":"..."}' \
+  "https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
 ```
 
 ### Comments
 
 ```bash
-github-rest comment list owner/repo 42
-github-rest comment create owner/repo 42 --body "Thanks!"
+# List issue/PR comments
+curl -sS -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/issues/{number}/comments"
 ```
 
-### Repo auto-detection
+## Pagination
 
-When `owner/repo` is omitted, the script reads it from `git remote -v`. This means you can run `github-rest pr list` inside any cloned GitHub repo without typing the repo name.
-
-## Token setup
-
-Add to `~/.bashrc` or `~/.zshrc`:
+When results may span multiple pages, check the `Link` response header. Parse with:
 
 ```bash
-export GITHUB_TOKEN="github_pat_..."
+curl -sI -H "Authorization: Bearer $TOKEN" \
+  "https://api.github.com/repos/{owner}/{repo}/pulls?per_page=100" \
+  | grep -oP 'rel="next"'
 ```
 
-Generate a token at: https://github.com/settings/tokens (needs `repo` scope).
+If present, fetch subsequent pages by following the `&page=N` parameter.
+
+## Error handling
+
+On failure, the API returns a JSON body with a `message` field. Check HTTP status code with `-w "%{http_code}"` and pipe the body through `jq '.message'`.

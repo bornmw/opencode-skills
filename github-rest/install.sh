@@ -29,36 +29,48 @@ fi
 
 # ── Determine install locations ──────────────────────────────────────────────
 
-INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 SKILL_DIR="${SKILL_DIR:-$HOME/.config/opencode/skills/github-rest}"
-
-SCRIPT_SRC="$(cd "$(dirname "$0")" && pwd)/scripts/github-rest"
+CONFIG_DIR="${CONFIG_DIR:-$HOME/.config/github-rest}"
 SKILL_SRC="$(cd "$(dirname "$0")" && pwd)/SKILL.md"
 
-# ── Install ───────────────────────────────────────────────────────────────────
+# ── Install skill ─────────────────────────────────────────────────────────────
 
-mkdir -p "$INSTALL_DIR"
 mkdir -p "$SKILL_DIR"
-
-echo "→ Installing github-rest CLI → $INSTALL_DIR/github-rest"
-cp "$SCRIPT_SRC" "$INSTALL_DIR/github-rest"
-chmod +x "$INSTALL_DIR/github-rest"
-
-echo "→ Installing skill definition → $SKILL_DIR/SKILL.md"
+echo "→ Installing skill → $SKILL_DIR/SKILL.md"
 cp "$SKILL_SRC" "$SKILL_DIR/SKILL.md"
+
+# ── Config file ───────────────────────────────────────────────────────────────
+
+mkdir -p "$CONFIG_DIR"
+chmod 700 "$CONFIG_DIR"
+
+TOKEN_FILE="$CONFIG_DIR/token"
+if [ ! -f "$TOKEN_FILE" ]; then
+  cat > "$TOKEN_FILE" << 'TOKENSAMPLE'
+# Replace the line below with your GitHub token (plain text, no quotes).
+# Lines starting with # are ignored. The first non-comment line is the token.
+# Generate one at: https://github.com/settings/tokens (repo scope)
+github_pat_...
+TOKENSAMPLE
+  chmod 600 "$TOKEN_FILE"
+  echo "→ Created config: $TOKEN_FILE"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
 echo ""
 echo "  ✓ Installed"
 echo ""
-echo "  CLI:      $INSTALL_DIR/github-rest"
-echo "  Skill:    $SKILL_DIR/SKILL.md"
+echo "  Skill:  $SKILL_DIR/SKILL.md"
+echo "  Config: $TOKEN_FILE"
 echo ""
 echo "  Next steps:"
-echo "  1. Add to your shell profile (~/.bashrc, ~/.zshrc):"
-echo "       export GITHUB_TOKEN=\"github_pat_...\""
-echo "       export PATH=\"\$PATH:$INSTALL_DIR\""
-echo "  2. Generate a token: https://github.com/settings/tokens"
-echo "  3. Verify it works:  github-rest get /user"
+echo "  1. Generate a token: https://github.com/settings/tokens (repo scope)"
+echo ""
+echo "  2. Write the token into the config file:"
+echo "       ${EDITOR:-nano} $TOKEN_FILE"
+echo "     Format: one line, plain token, no quotes (# lines are ignored)"
+echo ""
+echo "  3. Verify the skill works in opencode:"
+echo "       opencode --prompt \"list 10 most recent PRs in anomalyco/opencode using github-rest\""
 echo ""
