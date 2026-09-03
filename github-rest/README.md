@@ -1,6 +1,11 @@
 # github-rest
 
-An [opencode](https://opencode.ai) skill that calls the GitHub REST API directly with `curl` and `jq`. No wrapper script, no extra dependencies beyond what's already on your system.
+An [opencode](https://opencode.ai) skill for GitHub, in two parts:
+
+1. **REST API** via `curl` and `jq` (PRs, issues, comments, reviews, raw endpoints).
+2. **Plain `git` on GitHub remotes** — `push` / `pull` / `fetch` / `clone` authenticated with the same token (`x-access-token` URL, ephemeral; the token is never written to git config or a credential cache). This is the credential path in headless environments without `gh` or a GUI helper.
+
+No wrapper script, no extra dependencies beyond what's already on your system.
 
 ## Install
 
@@ -35,3 +40,5 @@ Once installed, mention GitHub (PRs, issues, repos, etc.) in your opencode promp
 - "create a PR with title 'Fix bug' from branch fix to main"
 - "merge PR #100 in owner/repo with squash"
 - "list my issues"
+- "commit and push" ← loads, because the push to a GitHub remote needs the skill's token path
+- "push failed with 'could not read Username for https://github.com'" ← loads, don't make the user push by hand

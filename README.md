@@ -4,7 +4,7 @@ Collection of [opencode](https://opencode.ai) skills.
 
 ## Skills
 
-- [github-rest](github-rest/) — GitHub REST API via CLI (PRs, issues, comments, reviews, raw API)
+- [github-rest](github-rest/) — GitHub via CLI: REST API (PRs, issues, comments, reviews, raw API) **and** `git push` / `pull` / `clone` against GitHub remotes (token from `~/.config/github-rest/token`, never persisted)
 
 ## Usage
 
