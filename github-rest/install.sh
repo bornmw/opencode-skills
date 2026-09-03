@@ -47,10 +47,7 @@ chmod 700 "$CONFIG_DIR"
 TOKEN_FILE="$CONFIG_DIR/token"
 if [ ! -f "$TOKEN_FILE" ]; then
   cat > "$TOKEN_FILE" << 'TOKENSAMPLE'
-# Replace the line below with your GitHub token (plain text, no quotes).
-# Lines starting with # are ignored. The first non-comment line is the token.
-# Generate one at: https://github.com/settings/tokens (repo scope)
-github_pat_...
+REPLACE_WITH_YOUR_GITHUB_TOKEN
 TOKENSAMPLE
   chmod 600 "$TOKEN_FILE"
   echo "→ Created config: $TOKEN_FILE"
@@ -67,9 +64,9 @@ echo ""
 echo "  Next steps:"
 echo "  1. Generate a token: https://github.com/settings/tokens (repo scope)"
 echo ""
-echo "  2. Write the token into the config file:"
-echo "       ${EDITOR:-nano} $TOKEN_FILE"
-echo "     Format: one line, plain token, no quotes (# lines are ignored)"
+  echo "  2. Write the token into the config file:"
+  echo "       ${EDITOR:-nano} $TOKEN_FILE"
+  echo "     Format: exactly one line — the token itself (no comments, no other lines)"
 echo ""
 echo "  3. Verify the skill works in opencode:"
 echo "       opencode --prompt \"list 10 most recent PRs in anomalyco/opencode using github-rest\""

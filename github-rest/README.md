@@ -29,7 +29,9 @@ echo "github_pat_..." > ~/.config/github-rest/token
 chmod 600 ~/.config/github-rest/token
 ```
 
-Lines starting with `#` are ignored. The first non-comment line is the token.
+The file is **exactly one line: the token** (trailing newline fine; no comments, nothing else) — the skill reads it with a plain `cat`, so any extra line breaks auth.
+
+By design the skill never materializes the value: it is never assigned to a shell variable, never written to any other file (including temp scripts), never printed, never stored in git config.
 
 ## Usage in opencode
 
