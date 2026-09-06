@@ -18,14 +18,20 @@ This registers the skill at `~/.config/opencode/skills/github-rest/` and creates
 ## Prerequisites
 
 - `curl` and `jq` installed
-- GitHub token with `repo` scope ([generate one](https://github.com/settings/tokens))
+- A GitHub token — **least privilege, not broad scope**:
+
+  - Preferred: a [fine-grained PAT](https://github.com/settings/personal-access-tokens/new) restricted to the repos you actually use, with `Contents` / `Pull requests` / `Issues: read and write` (plus `Metadata` read), and a ~90-day expiry. A dedicated account beats a personal one.
+  - Fallback: a classic PAT with `repo` scope ([generate one](https://github.com/settings/tokens)) — don't make this the default for this skill.
 
 ## Token setup
 
-The skill reads the token from `~/.config/github-rest/token`:
+The skill reads the token from `~/.config/github-rest/token`. Write it without echoing it through argv/shell history:
 
 ```bash
-echo "github_pat_..." > ~/.config/github-rest/token
+umask 077
+read -r -s -p "GitHub token: " TOKEN
+printf '%s\n' "$TOKEN" > ~/.config/github-rest/token
+unset TOKEN
 chmod 600 ~/.config/github-rest/token
 ```
 

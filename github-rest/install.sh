@@ -36,6 +36,10 @@ SKILL_SRC="$(cd "$(dirname "$0")" && pwd)/SKILL.md"
 # ── Install skill ─────────────────────────────────────────────────────────────
 
 mkdir -p "$SKILL_DIR"
+if [ -f "$SKILL_DIR/SKILL.md" ] && ! cmp -s "$SKILL_SRC" "$SKILL_DIR/SKILL.md"; then
+  cp "$SKILL_DIR/SKILL.md" "$SKILL_DIR/SKILL.md.bak"
+  echo "→ Existing SKILL.md differs — backed up → $SKILL_DIR/SKILL.md.bak"
+fi
 echo "→ Installing skill → $SKILL_DIR/SKILL.md"
 cp "$SKILL_SRC" "$SKILL_DIR/SKILL.md"
 
@@ -62,12 +66,12 @@ echo "  Skill:  $SKILL_DIR/SKILL.md"
 echo "  Config: $TOKEN_FILE"
 echo ""
 echo "  Next steps:"
-echo "  1. Generate a token: https://github.com/settings/tokens (repo scope)"
+echo "  1. Generate a token (fine-grained PAT scoped to the repos you need — see README; fallback: https://github.com/settings/tokens)"
 echo ""
-  echo "  2. Write the token into the config file:"
-  echo "       ${EDITOR:-nano} $TOKEN_FILE"
-  echo "     Format: exactly one line — the token itself (no comments, no other lines)"
+echo "  2. Write the token into the config file (see README for a no-argv way to do it):"
+echo "       ${EDITOR:-nano} $TOKEN_FILE"
+echo "     Format: exactly one line — the token itself (no comments, no other lines)"
 echo ""
 echo "  3. Verify the skill works in opencode:"
-echo "       opencode --prompt \"list 10 most recent PRs in anomalyco/opencode using github-rest\""
+echo "       opencode run \"list 10 most recent PRs in anomalyco/opencode using github-rest\""
 echo ""
