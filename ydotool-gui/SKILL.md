@@ -63,9 +63,15 @@ clicking to activate it), and closes the loop:
 ```
 scripts/goto.sh TX TY [OUTPUT] [CLICK]
 # TX,TY in the OUTPUT's local logical coords; OUTPUT e.g. DP-1, eDP-1, DP-3
-# CLICK=1 clicks once on target
+# CLICK=1 clicks once; CLICK=2 clicks twice (focus + action)
 scripts/goto.sh 160 123 DP-1 1    # click the thing at DP-1 (160,123)
+scripts/goto.sh 160 179 DP-1 2    # focus-click then action-click (unfocused window)
 ```
+
+**CLICK=2 for buttons on windows that may have lost focus** (the user
+clicked elsewhere, a new window appeared): wayfire's click-to-focus can
+consume the first click, so the action never fires. The first click
+re-focuses, the second performs the action.
 
 If the user is actively using the mouse (they say so, or the cursor teleports
 between your probes), **stop moving it** — re-sync with a read-only
@@ -199,7 +205,8 @@ DISPLAY=:1 nohup xterm -geometry 60x15+1500+400 -title "TEST" >/dev/null 2>&1 &
 
 Save the PID. **Wayfire is click-to-focus: a new window does NOT auto-grab
 focus** — an `Alt+F4` aimed at an unfocused window hits the currently focused
-one instead. Click the target window's title bar first if you need it focused.
+one instead. Click the target window's title bar first if you need it focused
+(`goto.sh ... 2` does the focus-click + action-click in one call).
 
 ## Gotchas
 
@@ -209,6 +216,10 @@ one instead. Click the target window's title bar first if you need it focused.
 - **Active output changes on click** (wayfire): after any click, the
   cursor-pos surface and screengrab follow that output.
 - New windows don't auto-grab focus (click-to-focus) — see above.
+- **Click-to-focus eats the first click** on a window that lost focus (user
+  clicked elsewhere, new window appeared): the button never fires. Use
+  `goto.sh ... 2` (focus-click + action-click) for actions on windows you
+  don't control the focus of.
 - `screengrab` CLI has no cursor flag; `includeCursor` is a KConfig entry set
   via the GUI checkbox.
 - Restart the daemon after boot: `sudo rc-update add ydotool default`, then

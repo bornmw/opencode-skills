@@ -8,6 +8,11 @@
 #   OUTPUT     target output name (e.g. DP-1, eDP-1). If omitted, the target
 #              is assumed to be on the output the cursor is currently on.
 #   CLICK      "1" = click once when on target.
+#              "2" = click twice (focus + action): the first click re-focuses
+#              the window under the cursor (wayfire's click-to-focus may
+#              consume the first click if the window lost focus), the second
+#              click performs the action. Use for buttons on windows the
+#              user may have unfocused.
 #
 # Why it exists: on multi-monitor boxes the same numeric coordinates exist on
 # several outputs; a blind move+click can land on the wrong monitor. This
@@ -95,9 +100,17 @@ for i in 1 2 3 4; do
     dx=$(( TX - ex )); dy=$(( TY - ey ))
     adx=${dx#-}; ady=${dy#-}
     if [ "$adx" -le 4 ] && [ "$ady" -le 4 ]; then
-        if [ "$DOCLICK" = "1" ]; then
+        if [ "$DOCLICK" = "1" ] || [ "$DOCLICK" = "2" ]; then
             ydotool click 0xC0 >/dev/null 2>&1
-            echo "GOTO-CLICKED at $ex $ey (pass $i${OUTPUT:+ on $OUTPUT})"
+            if [ "$DOCLICK" = "2" ]; then
+                # focus-click may have been consumed by click-to-focus;
+                # a second click now performs the action on the focused window
+                sleep 0.15
+                ydotool click 0xC0 >/dev/null 2>&1
+                echo "GOTO-CLICKED (x2 focus+action) at $ex $ey (pass $i${OUTPUT:+ on $OUTPUT})"
+            else
+                echo "GOTO-CLICKED at $ex $ey (pass $i${OUTPUT:+ on $OUTPUT})"
+            fi
         else
             echo "GOTO-OK at $ex $ey (pass $i${OUTPUT:+ on $OUTPUT})"
         fi

@@ -14,7 +14,8 @@ Bundled helper scripts (`scripts/`) do the gain-compensated small-step move
 and the cursor-in-screenshot detection. `goto.sh` + `cursor-pos` add exact
 **multi-monitor** support: programmatic cursor position per output
 (no screenshot pixels, no theme assumptions), active-output-aware crossing,
-and a verified closed-loop move. No wrapper daemon beyond `ydotoold`.
+and a verified closed-loop move (with an optional focus-click mode for
+click-to-focus compositors). No wrapper daemon beyond `ydotoold`.
 
 ## Install
 
