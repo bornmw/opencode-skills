@@ -10,8 +10,11 @@ It wraps the stock `ydotool` client + `screengrab`:
 - click / type / press keys,
 - screenshot the desktop and locate the cursor in it.
 
-Two bundled helper scripts (`scripts/`) do the gain-compensated small-step move
-and the cursor-in-screenshot detection. No wrapper daemon beyond `ydotoold`.
+Bundled helper scripts (`scripts/`) do the gain-compensated small-step move
+and the cursor-in-screenshot detection. `goto.sh` + `cursor-pos` add exact
+**multi-monitor** support: programmatic cursor position per output
+(no screenshot pixels, no theme assumptions), active-output-aware crossing,
+and a verified closed-loop move. No wrapper daemon beyond `ydotoold`.
 
 ## Install
 
@@ -62,14 +65,17 @@ export YDOTOOL_SOCKET=/tmp/.ydotool_socket   # client default doesn't exist here
 ydotool debug                                 # should connect without sudo
 ```
 
-## The pointer-gain quirk (why the skill exists)
+## The pointer model (why the skill exists)
 
-libinput assumes the virtual device is ~488 DPI, so it scales **every** relative
-delta by a constant **~2.05**, and a single large delta gets extra adaptive
-acceleration (~3.5×) that flings the cursor to a corner. `--absolute` is broken
-in v1.0.4. The skill's move recipe compensates: to move `D` pixels, send
-`D / 2.05` in ~10px steps ~50 ms apart (`scripts/ymove.sh`). The gain is
-machine-specific — the skill documents a recalibration step if it drifts.
+libinput assumes the virtual device is ~488 DPI, so it scales every relative
+delta; on this box the net effect (verified on scale 1.0 and 2.0 outputs) is:
+
+> **input delta ≈ delta in the output's local logical (scaled) pixels**
+
+A single large delta gets extra adaptive acceleration (~3.5×) that flings the
+cursor to a corner, and `--absolute` is broken in v1.0.4. The skill's move
+recipe compensates: small (~10 px) steps at ~40–50 ms (`scripts/goto.sh` does
+this with a verified closed loop; `scripts/ymove.sh` is the raw primitive).
 
 ## Usage in opencode
 

@@ -7,6 +7,7 @@ MISSING=""
 command -v ydotool   &>/dev/null || MISSING="$MISSING ydotool"
 command -v screengrab &>/dev/null || MISSING="$MISSING screengrab"
 command -v python3   &>/dev/null || MISSING="$MISSING python3"
+command -v wlr-randr &>/dev/null || MISSING="$MISSING wlr-randr"
 python3 -c "import PIL" &>/dev/null || MISSING="$MISSING python3-PIL"
 
 if [ -n "$MISSING" ]; then
@@ -37,7 +38,20 @@ echo "→ Installing scripts → $SKILL_DIR/scripts/"
 mkdir -p "$SKILL_DIR/scripts"
 cp "$SKILL_SRC"/scripts/ymove.sh      "$SKILL_DIR/scripts/ymove.sh"
 cp "$SKILL_SRC"/scripts/find_cursor.py "$SKILL_DIR/scripts/find_cursor.py"
+cp "$SKILL_SRC"/scripts/goto.sh       "$SKILL_DIR/scripts/goto.sh"
+cp "$SKILL_SRC"/scripts/cursor-pos.c  "$SKILL_DIR/scripts/cursor-pos.c"
+mkdir -p "$SKILL_DIR/scripts/protocols"
+cp "$SKILL_SRC"/scripts/protocols/*.xml "$SKILL_DIR/scripts/protocols/"
 chmod +x "$SKILL_DIR/scripts/"*
+
+# ── Build cursor-pos (needs gcc + wayland-scanner) ───────────────────────────
+if command -v gcc &>/dev/null && command -v wayland-scanner &>/dev/null; then
+  echo "→ Building cursor-pos"
+  ( cd "$SKILL_DIR/scripts" && bash build-cursor-pos.sh >/dev/null ) \
+    || echo "  ! cursor-pos build failed — goto.sh will fall back to reporting"
+else
+  echo "  ! gcc/wayland-scanner missing — cursor-pos not built (goto.sh needs it)"
+fi
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 
@@ -45,7 +59,7 @@ echo ""
 echo "  ✓ Installed"
 echo ""
 echo "  Skill:  $SKILL_DIR/SKILL.md"
-echo "  Scripts:$SKILL_DIR/scripts/ (ymove.sh, find_cursor.py)"
+echo "  Scripts:$SKILL_DIR/scripts/ (goto.sh, cursor-pos, ymove.sh, find_cursor.py)"
 echo ""
 echo "  Prerequisites (see README for the full daemon setup):"
 echo "  1. ydotoold running as root:  ydotoold -o <uid>:<gid> -P 0660"
