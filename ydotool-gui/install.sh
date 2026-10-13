@@ -40,6 +40,8 @@ cp "$SKILL_SRC"/scripts/ymove.sh      "$SKILL_DIR/scripts/ymove.sh"
 cp "$SKILL_SRC"/scripts/find_cursor.py "$SKILL_DIR/scripts/find_cursor.py"
 cp "$SKILL_SRC"/scripts/goto.sh       "$SKILL_DIR/scripts/goto.sh"
 cp "$SKILL_SRC"/scripts/cursor-pos.c  "$SKILL_DIR/scripts/cursor-pos.c"
+cp "$SKILL_SRC"/scripts/build-cursor-pos.sh "$SKILL_DIR/scripts/build-cursor-pos.sh"
+chmod +x "$SKILL_DIR/scripts/build-cursor-pos.sh"
 mkdir -p "$SKILL_DIR/scripts/protocols"
 cp "$SKILL_SRC"/scripts/protocols/*.xml "$SKILL_DIR/scripts/protocols/"
 chmod +x "$SKILL_DIR/scripts/"*
